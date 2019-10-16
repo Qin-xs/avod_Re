@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:25
+'''
 """Detection model trainer.
 
 This file provides a generic training method to train a
@@ -29,19 +34,21 @@ def train(model, train_config):
     # Get model configurations
     model_config = model.model_config
 
-    # Create a variable tensor to hold the global step
+    # 创建变量张量，负责全局步骤
     global_step_tensor = tf.Variable(
         0, trainable=False, name='global_step')
 
     #############################
     # Get training configurations
     #############################
+    # 训练的一些基本配置参数，包括迭代次数、检查点等
     max_iterations = train_config.max_iterations
     summary_interval = train_config.summary_interval
     checkpoint_interval = \
         train_config.checkpoint_interval
     max_checkpoints = train_config.max_checkpoints_to_keep
 
+    # 日志文件
     paths_config = model_config.paths_config
     logdir = paths_config.logdir
     if not os.path.exists(logdir):
@@ -56,6 +63,8 @@ def train(model, train_config):
     global_summaries = set([])
 
     # The model should return a dictionary of predictions
+    # 这是prediction部分．其中主要过程是先直接进入avod_model.py
+    # 在avod_model.py的build部分就有来自rpn_model的预测输入
     prediction_dict = model.build()
 
     summary_histograms = train_config.summary_histograms
@@ -63,11 +72,11 @@ def train(model, train_config):
     summary_bev_images = train_config.summary_bev_images
 
     ##############################
-    # Setup loss
+    # Setup loss 损失函数
     ##############################
     losses_dict, total_loss = model.loss(prediction_dict)
 
-    # Optimizer
+    # Optimizer 优化器
     training_optimizer = optimizer_builder.build(
         train_config.optimizer,
         global_summaries,
@@ -163,6 +172,7 @@ def train(model, train_config):
                 checkpoint_path, global_step))
 
         # Create feed_dict for inferencing
+        # 输入
         feed_dict = model.create_feed_dict()
 
         # Write summaries and train op
@@ -171,6 +181,7 @@ def train(model, train_config):
             time_elapsed = current_time - last_time
             last_time = current_time
 
+            # 开始运行预测部分
             train_op_loss, summary_out = sess.run(
                 [train_op, summary_merged], feed_dict=feed_dict)
 

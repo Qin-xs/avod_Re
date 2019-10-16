@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:24
+'''
 import numpy as np
 import tensorflow as tf
 
@@ -95,11 +100,11 @@ def tf_anchor_to_offset(anchors, ground_truth):
 
         return anchor_offsets
 
-
+# 这一部分的主要工作就是根据公式计算回归的anchor的参数值，包括[x,y,z,dx,dy,dz]
 def offset_to_anchor(anchors, offsets):
     """Decodes the anchor regression predictions with the
     anchor.
-
+    
     Args:
         anchors: A numpy array or a tensor of shape [N, 6]
             representing the generated anchors.
@@ -111,7 +116,7 @@ def offset_to_anchor(anchors, offsets):
         anchors: A numpy array of shape [N, 6]
             representing the predicted anchor boxes.
     """
-
+    # 确保anchors的shape是n*6
     fc.check_anchor_format(anchors)
     fc.check_anchor_format(offsets)
 

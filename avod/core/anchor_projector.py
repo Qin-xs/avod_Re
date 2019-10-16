@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:24
+'''
 """
 Projects anchors into bird's eye view and image space.
 Returns the minimum and maximum box corners, and will only work
@@ -9,7 +14,11 @@ import tensorflow as tf
 
 from wavedata.tools.core import calib_utils
 
-
+# 在查看kitti的数据集后，我发现它的数据采集系统的坐标系是这样的：
+# Camera：x=right,y=down,z=forward
+# Velodyne:x=forward,y=left,z=up
+# GPS/IMU:x=fprward,y=left,z=up
+# 那就是说明实际上是在camera坐标下进行的，所以鸟瞰图上实际就是xz轴。之后再细看，如何进行的点云鸟瞰图投影！
 def project_to_bev(anchors, bev_extents):
     """
     Projects an array of 3D anchors into bird's eye view
@@ -25,17 +34,23 @@ def project_to_bev(anchors, bev_extents):
           box_corners_norm: corners as a percentage of the map size, in the
             format N x [x1, y1, x2, y2]. Origin is the top left corner
     """
+    # [[-40,40],[0,70]]
     tensor_format = isinstance(anchors, tf.Tensor)
 
     if not tensor_format:
         anchors = np.asarray(anchors)
 
+    # 这里的鸟瞰图坐标是xz!
+    # x,y,z是框的中心点,dx,dy,dz则分别是宽，高，长（以人在车里的视角看）！
     x = anchors[:, 0]
     z = anchors[:, 2]
     half_dim_x = anchors[:, 3] / 2.0
     half_dim_z = anchors[:, 5] / 2.0
 
     # Calculate extent ranges
+    # Calculate extent ranges
+    # [[-40,40],[0,70]]。z的方向才是车前方。所以只有正数。
+    # 在观察kitti的数据时可以看到应该是只涉及前方的物体, 然而现有的车载感知系统实际上是车周围除开某个盲区都有。
     bev_x_extents_min = bev_extents[0][0]
     bev_z_extents_min = bev_extents[1][0]
     bev_x_extents_max = bev_extents[0][1]
@@ -44,9 +59,11 @@ def project_to_bev(anchors, bev_extents):
     bev_z_extents_range = bev_z_extents_max - bev_z_extents_min
 
     # 2D corners (top left, bottom right)
+    # 左上角与右下角
     x1 = x - half_dim_x
     x2 = x + half_dim_x
     # Flip z co-ordinates (origin changes from bottom left to top left)
+    # 翻转z轴,原点从左下角变为左上角
     z1 = bev_z_extents_max - (z + half_dim_z)
     z2 = bev_z_extents_max - (z - half_dim_z)
 
@@ -62,10 +79,12 @@ def project_to_bev(anchors, bev_extents):
     bev_box_corners = bev_box_corners - bev_extents_min_tiled
 
     # Calculate normalized box corners for ROI pooling
+    # 计算ROI池的标准化方框角
     extents_tiled = [bev_x_extents_range, bev_z_extents_range,
                      bev_x_extents_range, bev_z_extents_range]
+    # 标准化
     bev_box_corners_norm = bev_box_corners / extents_tiled
-
+    # [x1,z1,x2,z2],[]
     return bev_box_corners, bev_box_corners_norm
 
 

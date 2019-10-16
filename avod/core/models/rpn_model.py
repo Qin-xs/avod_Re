@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:25
+'''
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
@@ -153,26 +158,32 @@ class RpnModel(model.DetectionModel):
         Keys are defined as self.PL_*.
         """
         # Combine config data
+        # 输入的尺寸与深度
         bev_dims = np.append(self._bev_pixel_size, self._bev_depth)
-
+        # 鸟瞰图输入
         with tf.variable_scope('bev_input'):
             # Placeholder for BEV image input, to be filled in with feed_dict
             bev_input_placeholder = self._add_placeholder(tf.float32, bev_dims,
                                                           self.PL_BEV_INPUT)
 
+            # 在列上增加维度
             self._bev_input_batches = tf.expand_dims(
                 bev_input_placeholder, axis=0)
 
+            # resize输入的尺寸.config文件里面没有限制bev的尺寸
+            # 预处理实际就是预处理输入图像的尺寸,有些config里面不对尺寸进行限制
             self._bev_preprocessed = \
                 self._bev_feature_extractor.preprocess_input(
                     self._bev_input_batches, self._bev_pixel_size)
 
             # Summary Images
+            # 沿着深度,切割成6分,
             bev_summary_images = tf.split(
                 bev_input_placeholder, self._bev_depth, axis=2)
             tf.summary.image("bev_maps", bev_summary_images,
                              max_outputs=self._bev_depth)
 
+        # 图像输入
         with tf.variable_scope('img_input'):
             # Take variable size input images
             img_input_placeholder = self._add_placeholder(
@@ -191,11 +202,15 @@ class RpnModel(model.DetectionModel):
             tf.summary.image("rgb_image", self._img_preprocessed,
                              max_outputs=2)
 
+        #label.最后一个是名字.dtype,shape,name
         with tf.variable_scope('pl_labels'):
+            # 6维的anchors?
             self._add_placeholder(tf.float32, [None, 6],
                                   self.PL_LABEL_ANCHORS)
+            # 3D的boxes,x,y,z,dw,dh,dl,ry?
             self._add_placeholder(tf.float32, [None, 7],
                                   self.PL_LABEL_BOXES_3D)
+            # 标签的类
             self._add_placeholder(tf.float32, [None],
                                   self.PL_LABEL_CLASSES)
 
@@ -203,20 +218,27 @@ class RpnModel(model.DetectionModel):
         with tf.variable_scope('pl_anchors'):
             self._add_placeholder(tf.float32, [None, 6],
                                   self.PL_ANCHORS)
+            # ious
             self._add_placeholder(tf.float32, [None],
                                   self.PL_ANCHOR_IOUS)
+            # 这个应该就是六个回归∆t x , ∆t y , ∆t z , ∆d x , ∆d y , ∆d z
             self._add_placeholder(tf.float32, [None, 6],
                                   self.PL_ANCHOR_OFFSETS)
+            # calss
             self._add_placeholder(tf.float32, [None],
                                   self.PL_ANCHOR_CLASSES)
-
+            # 鸟瞰图投影.anchor的投影
             with tf.variable_scope('bev_anchor_projections'):
+                # 左上角与右下角坐标
                 self._add_placeholder(tf.float32, [None, 4],
                                       self.PL_BEV_ANCHORS)
+                # norm一下
                 self._bev_anchors_norm_pl = self._add_placeholder(
                     tf.float32, [None, 4], self.PL_BEV_ANCHORS_NORM)
 
+            # rbg投影
             with tf.variable_scope('img_anchor_projections'):
+                # RBG_anchor投影
                 self._add_placeholder(tf.float32, [None, 4],
                                       self.PL_IMG_ANCHORS)
                 self._img_anchors_norm_pl = self._add_placeholder(
@@ -231,24 +253,29 @@ class RpnModel(model.DetectionModel):
                                       name=self.PL_IMG_IDX)
                 self._add_placeholder(tf.float32, [4], self.PL_GROUND_PLANE)
 
+    # 对输入的img图像和bev图像卷积，进行特征提取
     def _set_up_feature_extractors(self):
         """Sets up feature extractors and stores feature maps and
         bottlenecks as member variables.
         """
 
+        # 得到输入鸟瞰图的featuremap
         self.bev_feature_maps, self.bev_end_points = \
             self._bev_feature_extractor.build(
                 self._bev_preprocessed,
                 self._bev_pixel_size,
                 self._is_training)
 
+        #得到输入图像的featuremap
         self.img_feature_maps, self.img_end_points = \
             self._img_feature_extractor.build(
                 self._img_preprocessed,
                 self._img_pixel_size,
                 self._is_training)
 
+        #bev 1*1的卷积操作
         with tf.variable_scope('bev_bottleneck'):
+            # 对featuremap进行1*1的卷积
             self.bev_bottleneck = slim.conv2d(
                 self.bev_feature_maps,
                 1, [1, 1],
@@ -257,7 +284,9 @@ class RpnModel(model.DetectionModel):
                 normalizer_params={
                     'is_training': self._is_training})
 
+        #img 1*1的卷积操作
         with tf.variable_scope('img_bottleneck'):
+            # 对featuremap进行1*1的卷积
             self.img_bottleneck = slim.conv2d(
                 self.img_feature_maps,
                 1, [1, 1],
@@ -280,31 +309,39 @@ class RpnModel(model.DetectionModel):
     def build(self):
 
         # Setup input placeholders
+        # 信息输入
         self._set_up_input_pls()
 
         # Setup feature extractors
+        # 特征提取
         self._set_up_feature_extractors()
 
+        # 1*1卷积后的bev_fasturemap和img_featuremap
         bev_proposal_input = self.bev_bottleneck
         img_proposal_input = self.img_bottleneck
 
+        # 融合参数
         fusion_mean_div_factor = 2.0
 
-        # If both img and bev probabilites are set to 1.0, don't do
-        # path drop.
+        # If both img and bev probabilites are set to 1.0, don't do path drop
+        # 如果image和bev概率都设置为1.0，则不要执行路径丢弃。
+        # train=0.9,test/val=1.0
         if not (self._path_drop_probabilities[0] ==
                 self._path_drop_probabilities[1] == 1.0):
             with tf.variable_scope('rpn_path_drop'):
-
+                # 从均匀分布中输出随机值。.随机输出3个0-1之间的数
                 random_values = tf.random_uniform(shape=[3],
                                                   minval=0.0,
                                                   maxval=1.0)
 
+                # 0.9,0.9.
+                # 不是零就是1
                 img_mask, bev_mask = self.create_path_drop_masks(
                     self._path_drop_probabilities[0],
                     self._path_drop_probabilities[1],
                     random_values)
-
+                
+                # 选择是否输入.如果mask为1 ,则输入,否则不输入
                 img_proposal_input = tf.multiply(img_proposal_input,
                                                  img_mask)
 
@@ -315,8 +352,9 @@ class RpnModel(model.DetectionModel):
                 self.bev_path_drop_mask = bev_mask
 
                 # Overwrite the division factor
+                # 在训练时的融合参数
                 fusion_mean_div_factor = img_mask + bev_mask
-
+        # bev和 iname 的 featuremap 的裁剪
         with tf.variable_scope('proposal_roi_pooling'):
 
             with tf.variable_scope('box_indices'):
@@ -333,9 +371,11 @@ class RpnModel(model.DetectionModel):
                     self._bev_anchors_norm_pl, axis=0)
 
                 # These should be all 0's since there is only 1 image
+                # 这些应该全是0，因为只有1个图像
                 tf_box_indices = get_box_indices(bev_boxes_norm_batches)
 
             # Do ROI Pooling on BEV
+            # 主要目的是让两种数据的输入能够统一一下，便于后续做数据融合．resize为６＊６的输出
             bev_proposal_rois = tf.image.crop_and_resize(
                 bev_proposal_input,
                 self._bev_anchors_norm_pl,
@@ -348,10 +388,13 @@ class RpnModel(model.DetectionModel):
                 tf_box_indices,
                 self._proposal_roi_crop_size)
 
+        # bev和image的融合
         with tf.variable_scope('proposal_roi_fusion'):
             rpn_fusion_out = None
+            # mean
             if self._fusion_method == 'mean':
                 tf_features_sum = tf.add(bev_proposal_rois, img_proposal_rois)
+                # /2平均融合方式
                 rpn_fusion_out = tf.divide(tf_features_sum,
                                            fusion_mean_div_factor)
             elif self._fusion_method == 'concat':
@@ -362,6 +405,7 @@ class RpnModel(model.DetectionModel):
 
         # TODO: move this section into an separate AnchorPredictor class
         with tf.variable_scope('anchor_predictor', 'ap', [rpn_fusion_out]):
+            # 融合后的作为输入
             tensor_in = rpn_fusion_out
 
             # Parse rpn layers config
@@ -369,6 +413,7 @@ class RpnModel(model.DetectionModel):
             l2_weight_decay = layers_config.l2_weight_decay
 
             if l2_weight_decay > 0:
+                # 正则化
                 weights_regularizer = slim.l2_regularizer(l2_weight_decay)
             else:
                 weights_regularizer = None
@@ -376,6 +421,7 @@ class RpnModel(model.DetectionModel):
             with slim.arg_scope([slim.conv2d],
                                 weights_regularizer=weights_regularizer):
                 # Use conv2d instead of fully_connected layers.
+                # 256,6上一层的输出实际上就是6*6的所以将全连接化为卷积操作，使用6*6的卷积核
                 cls_fc6 = slim.conv2d(tensor_in,
                                       layers_config.cls_fc6,
                                       self._proposal_roi_crop_size,
@@ -397,12 +443,14 @@ class RpnModel(model.DetectionModel):
                                             is_training=self._is_training,
                                             scope='cls_fc7_drop')
 
+                # 2,分类
                 cls_fc8 = slim.conv2d(cls_fc7_drop,
                                       2,
                                       [1, 1],
                                       activation_fn=None,
                                       scope='cls_fc8')
 
+                # 删除指定尺寸为1 的
                 objectness = tf.squeeze(
                     cls_fc8, [1, 2],
                     name='cls_fc8/squeezed')
@@ -429,6 +477,8 @@ class RpnModel(model.DetectionModel):
                                             is_training=self._is_training,
                                             scope='reg_fc7_drop')
 
+                # ∆t x , ∆t y , ∆t z , ∆d x , ∆d y , ∆d z
+                # 256,6个回归值包括中心点差值,以及长宽高的差值
                 reg_fc8 = slim.conv2d(reg_fc7_drop,
                                       6,
                                       [1, 1],
@@ -440,6 +490,7 @@ class RpnModel(model.DetectionModel):
                     name='reg_fc8/squeezed')
 
         # Histogram summaries
+        # 并没有用.就是一个可视化、可以自己选择是否可视化
         with tf.variable_scope('histograms_feature_extractor'):
             with tf.variable_scope('bev_vgg'):
                 for end_point in self.bev_end_points:
@@ -466,10 +517,13 @@ class RpnModel(model.DetectionModel):
 
             # Decode anchor regression offsets
             with tf.variable_scope('decoding'):
+                # 得到回归后的(x,y,z,dx,dy,dz).由最初的输入变为回归的值
                 regressed_anchors = anchor_encoder.offset_to_anchor(
                         anchors, offsets)
 
             with tf.variable_scope('bev_projection'):
+                # [[-40,40],[0,70]]
+                # 返回bev_box_corner,bev_box_corners_norm
                 _, bev_proposal_boxes_norm = anchor_projector.project_to_bev(
                     regressed_anchors, self._bev_extents)
 
@@ -480,11 +534,16 @@ class RpnModel(model.DetectionModel):
                 objectness_scores = objectness_softmax[:, 1]
 
                 # Do NMS on regressed anchors
+                # 实现极大值抑制non max suppression，
+                # 其中boxes是不同boxes的坐标，scores是不同boxes预测的分数，max_boxes是保留的最大box的个数。
+                # iou_threshold是一个阈值，去掉大于这个阈值的所有boxes?。
+                # _nms_size=1024,0.8
+                # 筛选出来的序数
                 top_indices = tf.image.non_max_suppression(
                     bev_proposal_boxes_norm, objectness_scores,
                     max_output_size=self._nms_size,
                     iou_threshold=self._nms_iou_thresh)
-
+                # 选择筛选后的anchors和objectness
                 top_anchors = tf.gather(regressed_anchors, top_indices)
                 top_objectness_softmax = tf.gather(objectness_scores,
                                                    top_indices)
@@ -953,35 +1012,45 @@ class RpnModel(model.DetectionModel):
         # the image branch, second determines keeping bev branch, the third
         # makes the final decision in the case where both branches were killed
         # off, otherwise the initial img and bev chances are kept.
+        # 首先确定保持图像分支的机会，第二个确定保持bev分支，
+        # 第三个决定在两个分支被杀掉的情况下做出最终决定，否则保留初始的img和bev机会。
 
+        # tf.less()->bool/将x的数据格式转化成dtype.
+        # random_value[0]<0.9,keep
         img_chances = tf.case([(tf.less(random_values[0], p_img),
                                 keep_branch)], default=kill_branch)
-
+        # random_value[1]<0.9,keep,默认为kill!
         bev_chances = tf.case([(tf.less(random_values[1], p_bev),
                                 keep_branch)], default=kill_branch)
 
         # Decision to determine whether both branches were killed off
         third_flip = tf.logical_or(tf.cast(img_chances, dtype=tf.bool),
                                    tf.cast(bev_chances, dtype=tf.bool))
+        # 两者有一个为1,则third_flip=1.0
         third_flip = tf.cast(third_flip, dtype=tf.float32)
 
         # Make a second choice, for the third case
         # Here we use a 50/50 chance to keep either image or bev
         # If its greater than 0.5, keep the image
+        # random_value[2]>0.5,keep
         img_second_flip = tf.case([(tf.greater(random_values[2], 0.5),
                                     keep_branch)],
                                   default=kill_branch)
         # If its less than or equal to 0.5, keep bev
+        # random_value[2]<=0.5,keep/两者相冲
         bev_second_flip = tf.case([(tf.less_equal(random_values[2], 0.5),
                                     keep_branch)],
                                   default=kill_branch)
 
         # Use lambda since this returns another condition and it needs to
         # be callable
+        # 如果third=1,则使用img_chances作为最终结果,即random_value[0]<0.9,keep
+        # 否则,以第二种方法作为最终结果／第二种方法里面只会有一个为true
         final_img_mask = tf.case([(tf.equal(third_flip, 1),
                                    lambda: img_chances)],
                                  default=lambda: img_second_flip)
 
+        # 同上
         final_bev_mask = tf.case([(tf.equal(third_flip, 1),
                                    lambda: bev_chances)],
                                  default=lambda: bev_second_flip)

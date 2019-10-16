@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:25
+'''
 import numpy as np
 
 import tensorflow as tf
@@ -121,14 +126,18 @@ class AvodModel(model.DetectionModel):
         self.sample_info = {}
 
     def build(self):
+        # 需要RPN的输入
         rpn_model = self._rpn_model
 
         # Share the same prediction dict as RPN
+        # 共享RPN model的预测
         prediction_dict = rpn_model.build()
 
+        # nms后的anchors
         top_anchors = prediction_dict[RpnModel.PRED_TOP_ANCHORS]
+        # 地面
         ground_plane = rpn_model.placeholders[RpnModel.PL_GROUND_PLANE]
-
+        # 类别标签
         class_labels = rpn_model.placeholders[RpnModel.PL_LABEL_CLASSES]
 
         with tf.variable_scope('avod_projection'):

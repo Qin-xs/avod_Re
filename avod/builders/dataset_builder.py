@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:24
+'''
 from copy import deepcopy
 
 from google.protobuf import text_format
@@ -167,16 +172,15 @@ class DatasetBuilder(object):
     def build_kitti_dataset(base_cfg,
                             use_defaults=True,
                             new_cfg=None) -> KittiDataset:
-        """Builds a KittiDataset object using the provided configurations
+        """使用传入的配置参数构建一个KittiDataset类的对象
 
         Args:
-            base_cfg: a base dataset configuration
-            use_defaults: whether to use the default config values
-            new_cfg: (optional) a custom dataset configuration, no default
-                values will be used, all config values must be provided
+            base_cfg: 一些基础的参数
+            use_defaults: 标志位，表示是否利用默认参数
+            new_cfg: 新的配置参数（所谓新的配置参数是指默认参数里没有的参数，所以这些参数必须提供相应的值，因为没默认值可用）
 
         Returns:
-            KittiDataset object
+            KittiDataset类的对象
         """
         cfg_copy = DatasetBuilder.copy_config(base_cfg)
 

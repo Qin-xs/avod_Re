@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:24
+'''
 """Contains modified VGG model definition to extract features from
 Bird's eye view input.
 
@@ -51,7 +56,7 @@ class BevVgg(bev_feature_extractor.BevFeatureExtractor):
             The last op containing the log predictions and end_points dict.
         """
         vgg_config = self.config
-
+        # input为输入的bev_inout
         with slim.arg_scope(self.vgg_arg_scope(
                 weight_decay=vgg_config.l2_weight_decay)):
             with tf.variable_scope(scope, 'bev_vgg', [inputs]) as sc:
@@ -108,10 +113,12 @@ class BevVgg(bev_feature_extractor.BevFeatureExtractor):
                     upsampled_shape = \
                         downsampled_shape * vgg_config.upsampling_multiplier
 
+                    #双线性插值 ,net里的目标尺寸变为原始图像的1/2
                     feature_maps_out = tf.image.resize_bilinear(
                         net, upsampled_shape)
 
                 # Convert end_points_collection into a end_point dict.
+                # 集合转换为字典
                 end_points = slim.utils.convert_collection_to_dict(
                     end_points_collection)
 
