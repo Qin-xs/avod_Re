@@ -1,3 +1,8 @@
+'''
+@Description: 
+@Author: Ren Qian
+@Date: 2019-10-11 17:11:25
+'''
 """Detection model inferencing.
 
 This runs the DetectionModel evaluator in test mode to output detections.
